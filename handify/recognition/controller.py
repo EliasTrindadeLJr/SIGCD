@@ -6,14 +6,12 @@ class GestureController:
     def __init__(self, config, executor):
         self.config = config
         self.executor = executor
-
         self.active_gesture = None
         self.last_execution = {}
 
     def process(self, gesture_id, confidence):
 
-        # Nenhum gesto reconhecido:
-        # libera o gesto para uma nova execução.
+        # Nenhum gesto reconhecido.
         if not gesture_id:
             self.active_gesture = None
             return False
@@ -29,17 +27,13 @@ class GestureController:
             return False
 
         minimum_confidence = float(
-            gesture.get("min_confidence", 0.65)
+            gesture.get(
+                "min_confidence",
+                0.65
+            )
         )
 
         if confidence < minimum_confidence:
-            return False
-
-        repeat = gesture.get("repeat", False)
-
-        # Se repeat=False, só executa uma vez
-        # até o gesto deixar de ser reconhecido.
-        if not repeat and gesture_id == self.active_gesture:
             return False
 
         now = time.monotonic()
@@ -47,7 +41,10 @@ class GestureController:
         cooldown = max(
             0.0,
             float(
-                gesture.get("cooldown", 0.5)
+                gesture.get(
+                    "cooldown",
+                    0.5
+                )
             )
         )
 
@@ -56,6 +53,7 @@ class GestureController:
             0.0
         )
 
+        # Impede a execução até o cooldown terminar.
         if now - previous < cooldown:
             self.active_gesture = gesture_id
             return False
