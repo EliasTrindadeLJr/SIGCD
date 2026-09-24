@@ -258,9 +258,6 @@ class MainWindow(QMainWindow):
                 "Sequência",
                 "Clique",
                 "Duplo clique",
-                "Pressionar e segurar",
-                "Mover mouse",
-                "Mover mouse para posição",
                 "Rolagem",
                 "Rolagem horizontal",
                 "Comando especial"
@@ -350,33 +347,33 @@ class MainWindow(QMainWindow):
             self.duration
         )
 
-        # X
+        # # X
 
-        self.x_spin = QSpinBox()
+        # self.x_spin = QSpinBox()
 
-        self.x_spin.setRange(
-            -10000,
-            10000
-        )
+        # self.x_spin.setRange(
+        #     -10000,
+        #     10000
+        # )
 
-        form.addRow(
-            "X:",
-            self.x_spin
-        )
+        # form.addRow(
+        #     "X:",
+        #     self.x_spin
+        # )
 
-        # Y
+        # # Y
 
-        self.y_spin = QSpinBox()
+        # self.y_spin = QSpinBox()
 
-        self.y_spin.setRange(
-            -10000,
-            10000
-        )
+        # self.y_spin.setRange(
+        #     -10000,
+        #     10000
+        # )
 
-        form.addRow(
-            "Y:",
-            self.y_spin
-        )
+        # form.addRow(
+        #     "Y:",
+        #     self.y_spin
+        # )
 
         # Quantidade
 
@@ -388,11 +385,11 @@ class MainWindow(QMainWindow):
         )
 
         self.amount_spin.setValue(
-            5
+            50
         )
 
         form.addRow(
-            "Quantidade:",
+            "N de Rolagem:",
             self.amount_spin
         )
 
@@ -791,9 +788,6 @@ class MainWindow(QMainWindow):
             "sequence": "Sequência",
             "click": "Clique",
             "double_click": "Duplo clique",
-            "hold": "Pressionar e segurar",
-            "move_relative": "Mover mouse",
-            "move_absolute": "Mover mouse para posição",
             "scroll": "Rolagem",
             "hscroll": "Rolagem horizontal",
             "special": "Comando especial"
@@ -842,24 +836,6 @@ class MainWindow(QMainWindow):
                 action.get(
                     "duration",
                     1
-                )
-            )
-        )
-
-        self.x_spin.setValue(
-            int(
-                action.get(
-                    "x",
-                    0
-                )
-            )
-        )
-
-        self.y_spin.setValue(
-            int(
-                action.get(
-                    "y",
-                    0
                 )
             )
         )
@@ -1060,31 +1036,31 @@ class MainWindow(QMainWindow):
 
         # Mouse relativo
 
-        if label == "Mover mouse":
+        # if label == "Mover mouse":
 
-            return {
-                "type": "move_relative",
+        #     return {
+        #         "type": "move_relative",
 
-                "x": self.x_spin.value(),
+        #         "x": self.x_spin.value(),
 
-                "y": self.y_spin.value(),
+        #         "y": self.y_spin.value(),
 
-                "duration": self.duration.value()
-            }
+        #         "duration": self.duration.value()
+        #     }
 
-        # Mouse absoluto
+        # # Mouse absoluto
 
-        if label == "Mover mouse para posição":
+        # if label == "Mover mouse para posição":
 
-            return {
-                "type": "move_absolute",
+        #     return {
+        #         "type": "move_absolute",
 
-                "x": self.x_spin.value(),
+        #         "x": self.x_spin.value(),
 
-                "y": self.y_spin.value(),
+        #         "y": self.y_spin.val/ue(),
 
-                "duration": self.duration.value()
-            }
+        #         "duration": self.duration.value()
+        #     }
 
         # Scroll
 
@@ -1264,6 +1240,10 @@ class MainWindow(QMainWindow):
 
             self.detected.setText(
                 "Gesto: —"
+            )
+
+            self.detected.setToolTip(
+                "Identificação do gesto realizado"
             )
 
             self.confidence.setText(
