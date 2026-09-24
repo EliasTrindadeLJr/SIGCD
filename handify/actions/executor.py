@@ -31,6 +31,15 @@ class ActionExecutor:
             else:
                 pyautogui.press(key)
 
+        elif action_type in "hotkey":
+
+            keys = action.get("keys", [])
+
+            if keys:
+                pyautogui.hotkey(
+                    *keys
+                )
+
         elif action_type == "delay":
 
             time.sleep(
@@ -212,6 +221,7 @@ class ActionExecutor:
 
         # Cada caractere do texto vira uma tecla.
         for char in sequence:
+
 
             if char == " ":
                 pyautogui.press("space")
