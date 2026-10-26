@@ -2,16 +2,8 @@ import uuid
 
 import cv2
 
-from PySide6.QtCore import (
-    QTimer,
-    Qt
-)
-
-from PySide6.QtGui import (
-    QImage,
-    QPixmap
-)
-
+from PySide6.QtCore import QTimer, Qt, QSettings
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -26,10 +18,12 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QSpinBox,
     QCheckBox,
-    QGroupBox,
+    QFrame,
     QFormLayout,
     QMessageBox,
-    QInputDialog
+    QInputDialog,
+    QProgressBar,
+    QScrollArea,
 )
 
 from handify.config.manager import ConfigManager
@@ -38,39 +32,301 @@ from handify.recognition.gesture_recognizer import GestureRecognizer
 from handify.recognition.controller import GestureController
 
 
+# =========================================================
+# TEMA
+# =========================================================
+# Grafite azulado + índigo suave como destaque.
+# Verde = sucesso, âmbar = aviso, coral = erro.
+
+STYLE_TEMPLATE = """
+* {
+    font-family: "Inter", "Segoe UI", "Noto Sans", sans-serif;
+    font-size: 13px;
+    color: @text;
+}
+
+QMainWindow, QScrollArea, QScrollArea > QWidget > QWidget {
+    background: @bg;
+}
+
+QDialog, QInputDialog, QMessageBox {
+    background: @bg;
+}
+QDialog QLabel, QInputDialog QLabel, QMessageBox QLabel {
+    background: transparent;
+    color: @text;
+    font-size: 13px;
+}
+QDialog QPushButton, QMessageBox QPushButton {
+    min-width: 84px;
+}
+QDialog QPushButton:default, QMessageBox QPushButton:default {
+    background: @accent;
+    border-color: @accent;
+    color: #FFFFFF;
+}
+
+QFrame#card {
+    background: @card;
+    border: 1px solid @border;
+    border-radius: 12px;
+}
+
+QLabel#cardTitle {
+    font-size: 15px;
+    font-weight: 600;
+    color: @title;
+}
+
+QLabel#muted {
+    color: @muted;
+}
+
+QLabel#video {
+    background: @video;
+    border: 1px solid @border;
+    border-radius: 12px;
+    color: @videotext;
+    font-size: 15px;
+}
+
+QLabel#gestureName {
+    font-size: 22px;
+    font-weight: 600;
+    color: @gesture;
+}
+
+QLabel#status {
+    background: @surface;
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: @statustext;
+}
+QLabel#status[kind="ok"]    { background: @okbg; color: @okfg; }
+QLabel#status[kind="warn"]  { background: @warnbg; color: @warnfg; }
+QLabel#status[kind="error"] { background: @errbg; color: @errfg; }
+
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+    background: @field;
+    border: 1px solid @inputborder;
+    border-radius: 8px;
+    padding: 7px 10px;
+    min-height: 20px;
+    selection-background-color: @accent;
+}
+QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover {
+    border-color: @hoverborder;
+}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+    border-color: @focus;
+}
+QComboBox::drop-down { border: none; width: 26px; }
+QComboBox QAbstractItemView {
+    background: @card;
+    border: 1px solid @inputborder;
+    selection-background-color: @selected;
+    outline: none;
+}
+
+QPushButton {
+    background: @btn;
+    border: 1px solid @btnborder;
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-weight: 500;
+}
+QPushButton:hover   { background: @btnhover; }
+QPushButton:pressed { background: @btnpressed; }
+QPushButton:focus   { border-color: @focus; }
+
+QPushButton#primary {
+    background: @accent;
+    border: 1px solid @accent;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+QPushButton#primary:hover   { background: @accenthover; }
+QPushButton#primary:pressed { background: @accentpressed; }
+
+QPushButton#danger {
+    background: transparent;
+    border: 1px solid @dangerborder;
+    color: @errfg;
+}
+QPushButton#danger:hover { background: @errbg; }
+
+QListWidget {
+    background: @field;
+    border: 1px solid @border;
+    border-radius: 10px;
+    padding: 4px;
+    outline: none;
+}
+QListWidget::item {
+    padding: 9px 10px;
+    border-radius: 7px;
+}
+QListWidget::item:hover    { background: @surface; }
+QListWidget::item:selected { background: @selected; color: @selectedtext; }
+
+QCheckBox { spacing: 8px; }
+QCheckBox::indicator {
+    width: 18px; height: 18px;
+    border-radius: 5px;
+    border: 1px solid @hoverborder;
+    background: @field;
+}
+QCheckBox::indicator:checked {
+    background: @accent;
+    border-color: @accent;
+}
+
+QProgressBar {
+    background: @field;
+    border: none;
+    border-radius: 4px;
+    max-height: 8px;
+    min-height: 8px;
+    text-align: center;
+    color: transparent;
+}
+QProgressBar::chunk {
+    background: @accent;
+    border-radius: 4px;
+}
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px;
+}
+QScrollBar::handle:vertical {
+    background: @scroll;
+    border-radius: 4px;
+    min-height: 30px;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+
+QFrame#divider { background: @border; }
+
+QToolTip {
+    background: @surface;
+    color: @text;
+    border: 1px solid @btnborder;
+    padding: 4px 8px;
+}
+"""
+
+PALETTES = {
+    "light": {
+        "bg": "#EEF0F6", "field": "#F6F7FB", "card": "#FFFFFF",
+        "border": "#DDE1EC", "title": "#151A2B", "text": "#232A3D",
+        "muted": "#6A7390", "video": "#E4E8F2", "videotext": "#7A829C",
+        "surface": "#EDF0F8", "statustext": "#4A5270",
+        "okbg": "#DDF3E5", "okfg": "#1F6B3F",
+        "warnbg": "#FBEFD0", "warnfg": "#7A5A10",
+        "errbg": "#FBE1E3", "errfg": "#A12B36",
+        "inputborder": "#CBD1E1", "hoverborder": "#AEB6CE",
+        "focus": "#6F7DFF", "accent": "#5A69F0",
+        "accenthover": "#6D7BFF", "accentpressed": "#4A58DB",
+        "selected": "#DDE1FF", "selectedtext": "#1D2250",
+        "btn": "#EEF0F8", "btnborder": "#D3D8E6",
+        "btnhover": "#E3E7F4", "btnpressed": "#D8DDEE",
+        "dangerborder": "#EBC3C7", "scroll": "#C3C9DA",
+        "gesture": "#4A58DB",
+    },
+    "dark": {
+        "bg": "#171A23", "field": "#171A23", "card": "#1F2330",
+        "border": "#2C3142", "title": "#F4F6FC", "text": "#E6E9F2",
+        "muted": "#8B93AA", "video": "#0F1117", "videotext": "#6B7390",
+        "surface": "#232838", "statustext": "#B9C0D6",
+        "okbg": "#1E3329", "okfg": "#8FE0B0",
+        "warnbg": "#3A3120", "warnfg": "#F0CD85",
+        "errbg": "#3C2326", "errfg": "#F2A0A6",
+        "inputborder": "#333A50", "hoverborder": "#4A5273",
+        "focus": "#7C8CFF", "accent": "#6F7DFF",
+        "accenthover": "#8290FF", "accentpressed": "#5E6BEA",
+        "selected": "#343C66", "selectedtext": "#FFFFFF",
+        "btn": "#2A3042", "btnborder": "#353C52",
+        "btnhover": "#333A52", "btnpressed": "#262B3C",
+        "dangerborder": "#5A3A40", "scroll": "#343B52",
+        "gesture": "#A9B4FF",
+    },
+}
+
+
+def build_style(theme):
+    """Gera a folha de estilo (QSS) para o tema 'light' ou 'dark'."""
+
+    palette = PALETTES.get(theme, PALETTES["light"])
+    style = STYLE_TEMPLATE
+
+    # Nomes maiores primeiro (@selectedtext antes de @selected, etc.)
+    for key in sorted(palette, key=len, reverse=True):
+        style = style.replace("@" + key, palette[key])
+
+    return style
+
+
+
+def make_card(title=None, subtitle=None):
+    """Cria um painel arredondado e devolve (frame, layout)."""
+
+    frame = QFrame()
+    frame.setObjectName("card")
+
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(18, 16, 18, 18)
+    layout.setSpacing(12)
+
+    if title:
+        label = QLabel(title)
+        label.setObjectName("cardTitle")
+        layout.addWidget(label)
+
+    if subtitle:
+        hint = QLabel(subtitle)
+        hint.setObjectName("muted")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+    return frame, layout
+
+
 class MainWindow(QMainWindow):
+
+    # Rótulo da ação -> campos relevantes no formulário
+    ACTION_FIELDS = {
+        "Tecla": ["key"],
+        "Combinação": ["keys"],
+        "Sequência": ["sequence"],
+        "Clique": ["button"],
+        "Duplo clique": ["button"],
+        "Rolagem": ["amount"],
+        "Rolagem horizontal": ["amount"],
+        "Comando especial": ["special"],
+    }
 
     def __init__(self):
 
         super().__init__()
 
-        self.setWindowTitle(
-            "SIGCD — Gestos personalizados"
-        )
+        self.setWindowTitle("SIGCD — Gestos personalizados")
+        self.resize(1240, 760)
+        self.setMinimumSize(1000, 640)
 
-        self.resize(
-            1200,
-            720
-        )
+        self.settings = QSettings("handify", "sigcd")
+        self.theme = self.settings.value("theme", "light")
+        self.apply_theme(self.theme, save=False)
 
         self.config = ConfigManager()
-
         self.executor = ActionExecutor()
-
         self.recognizer = GestureRecognizer()
+        self.controller = GestureController(self.config, self.executor)
 
-        self.controller = GestureController(
-            self.config,
-            self.executor
-        )
-
-        self.camera = cv2.VideoCapture(
-            0,
-            cv2.CAP_V4L2
-        )
+        self.camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
         if not self.camera.isOpened():
-
             self.camera = cv2.VideoCapture(0)
 
         self.current_sample = None
@@ -78,11 +334,7 @@ class MainWindow(QMainWindow):
         self.build_ui()
 
         self.timer = QTimer(self)
-
-        self.timer.timeout.connect(
-            self.process_frame
-        )
-
+        self.timer.timeout.connect(self.process_frame)
         self.timer.start(30)
 
     # =====================================================
@@ -92,436 +344,363 @@ class MainWindow(QMainWindow):
     def build_ui(self):
 
         central = QWidget()
+        self.setCentralWidget(central)
 
-        self.setCentralWidget(
-            central
-        )
+        root = QHBoxLayout(central)
+        root.setContentsMargins(20, 20, 20, 20)
+        root.setSpacing(20)
 
-        root = QHBoxLayout(
-            central
-        )
+        root.addLayout(self.build_camera_panel(), 3)
+        root.addWidget(self.build_side_panel(), 2)
 
-        # =================================================
-        # CÂMERA
-        # =================================================
+        self.refresh_list()
+        self.update_action_fields()
+        self.apply_theme(self.theme, save=False)
+
+    # -----------------------------------------------------
+    # Câmera
+    # -----------------------------------------------------
+
+    def build_camera_panel(self):
 
         left = QVBoxLayout()
+        left.setSpacing(14)
 
-        self.video = QLabel(
-            "Câmera"
-        )
+        self.video = QLabel("Aguardando câmera…")
+        self.video.setObjectName("video")
+        self.video.setMinimumSize(640, 480)
+        self.video.setAlignment(Qt.AlignCenter)
 
-        self.video.setMinimumSize(
-            640,
-            480
-        )
+        left.addWidget(self.video, 1)
 
-        self.video.setAlignment(
-            Qt.AlignCenter
-        )
+        # Gesto detectado
 
-        self.video.setStyleSheet(
-            """
-            background: #111;
-            color: #aaa;
-            """
-        )
+        info, info_layout = make_card()
 
-        left.addWidget(
-            self.video
-        )
+        caption = QLabel("Gesto detectado")
+        caption.setObjectName("muted")
 
-        self.detected = QLabel(
-            "Gesto: —"
-        )
+        self.detected = QLabel("—")
+        self.detected.setObjectName("gestureName")
+        self.detected.setToolTip("Identificação do gesto realizado")
 
-        self.confidence = QLabel(
-            "Confiança: —"
-        )
+        top = QHBoxLayout()
+        top.addWidget(caption)
+        top.addStretch()
 
-        left.addWidget(
-            self.detected
-        )
+        self.confidence = QLabel("—")
+        self.confidence.setObjectName("muted")
+        top.addWidget(self.confidence)
 
-        left.addWidget(
-            self.confidence
-        )
+        self.confidence_bar = QProgressBar()
+        self.confidence_bar.setRange(0, 100)
+        self.confidence_bar.setValue(0)
+        self.confidence_bar.setTextVisible(False)
 
-        self.capture_button = QPushButton(
-            "Capturar gesto atual"
-        )
+        info_layout.setSpacing(6)
+        info_layout.addLayout(top)
+        info_layout.addWidget(self.detected)
+        info_layout.addWidget(self.confidence_bar)
 
-        self.capture_button.clicked.connect(
-            self.capture_gesture
-        )
+        left.addWidget(info)
 
-        left.addWidget(
-            self.capture_button
-        )
+        self.capture_button = QPushButton("Capturar amostra do gesto atual")
+        self.capture_button.setObjectName("primary")
+        self.capture_button.setCursor(Qt.PointingHandCursor)
+        self.capture_button.clicked.connect(self.capture_gesture)
 
-        root.addLayout(
-            left,
-            2
-        )
+        left.addWidget(self.capture_button)
 
-        # =================================================
-        # DIREITA
-        # =================================================
+        return left
 
-        right = QVBoxLayout()
+    # -----------------------------------------------------
+    # Painel lateral
+    # -----------------------------------------------------
 
-        # =================================================
-        # GESTOS
-        # =================================================
+    def build_side_panel(self):
 
-        gesture_group = QGroupBox(
-            "Gestos cadastrados"
-        )
+        content = QWidget()
 
-        gesture_layout = QVBoxLayout(
-            gesture_group
-        )
+        right = QVBoxLayout(content)
+        right.setContentsMargins(0, 0, 8, 0)
+        right.setSpacing(14)
+
+        self.theme_button = QPushButton()
+        self.theme_button.setCursor(Qt.PointingHandCursor)
+        self.theme_button.setToolTip("Alternar entre modo claro e escuro")
+        self.theme_button.clicked.connect(self.toggle_theme)
+
+        header = QHBoxLayout()
+        header.addStretch()
+        header.addWidget(self.theme_button)
+
+        right.addLayout(header)
+        right.addWidget(self.build_gesture_card())
+        right.addWidget(self.build_form_card())
+
+        save_button = QPushButton("Salvar configuração")
+        save_button.setObjectName("primary")
+        save_button.setCursor(Qt.PointingHandCursor)
+        save_button.clicked.connect(self.save_gesture)
+
+        test_button = QPushButton("Testar ação")
+        test_button.setCursor(Qt.PointingHandCursor)
+        test_button.clicked.connect(self.test_action)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
+        actions.addWidget(test_button)
+        actions.addWidget(save_button, 1)
+
+        right.addLayout(actions)
+
+        self.status = QLabel("Pronto.")
+        self.status.setObjectName("status")
+        self.status.setWordWrap(True)
+
+        right.addWidget(self.status)
+        right.addStretch()
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
+        scroll.setMinimumWidth(380)
+
+        return scroll
+
+    def build_gesture_card(self):
+
+        card, layout = make_card("Gestos cadastrados")
 
         self.gesture_list = QListWidget()
+        self.gesture_list.setMinimumHeight(140)
+        self.gesture_list.setMaximumHeight(200)
+        self.gesture_list.currentItemChanged.connect(self.load_selected)
 
-        self.gesture_list.currentItemChanged.connect(
-            self.load_selected
-        )
-
-        gesture_layout.addWidget(
-            self.gesture_list
-        )
+        layout.addWidget(self.gesture_list)
 
         buttons = QHBoxLayout()
+        buttons.setSpacing(10)
 
-        new_button = QPushButton(
-            "Novo"
-        )
+        new_button = QPushButton("Novo gesto")
+        new_button.setCursor(Qt.PointingHandCursor)
+        new_button.clicked.connect(self.new_gesture)
 
-        new_button.clicked.connect(
-            self.new_gesture
-        )
+        delete_button = QPushButton("Excluir")
+        delete_button.setObjectName("danger")
+        delete_button.setCursor(Qt.PointingHandCursor)
+        delete_button.clicked.connect(self.delete_gesture)
 
-        delete_button = QPushButton(
-            "Excluir"
-        )
+        buttons.addWidget(new_button, 1)
+        buttons.addWidget(delete_button)
 
-        delete_button.clicked.connect(
-            self.delete_gesture
-        )
+        layout.addLayout(buttons)
 
-        buttons.addWidget(
-            new_button
-        )
+        return card
 
-        buttons.addWidget(
-            delete_button
-        )
+    def build_form_card(self):
 
-        gesture_layout.addLayout(
-            buttons
-        )
+        card, layout = make_card("Configuração do gesto")
 
-        right.addWidget(
-            gesture_group
-        )
+        self.form = QFormLayout()
+        self.form.setHorizontalSpacing(14)
+        self.form.setVerticalSpacing(10)
+        self.form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
-        # =================================================
-        # CONFIGURAÇÃO
-        # =================================================
-
-        form_group = QGroupBox(
-            "Configuração do gesto"
-        )
-
-        form = QFormLayout(
-            form_group
-        )
+        form = self.form
 
         # Nome
 
         self.name_edit = QLineEdit()
-
-        form.addRow(
-            "Nome:",
-            self.name_edit
-        )
+        form.addRow("Nome", self.name_edit)
 
         # Ação
 
         self.action_combo = QComboBox()
-
-        self.action_combo.addItems(
-            [
-                "Tecla",
-                "Combinação",
-                "Sequência",
-                "Clique",
-                "Duplo clique",
-                "Rolagem",
-                "Rolagem horizontal",
-                "Comando especial"
-            ]
+        self.action_combo.addItems(list(self.ACTION_FIELDS.keys()))
+        self.action_combo.currentTextChanged.connect(
+            self.update_action_fields
         )
-
-        form.addRow(
-            "Ação:",
-            self.action_combo
-        )
+        form.addRow("Ação", self.action_combo)
 
         # Tecla
 
         self.key_edit = QLineEdit()
-
-        self.key_edit.setPlaceholderText(
-            "enter, space, f5..."
-        )
-
-        form.addRow(
-            "Tecla:",
-            self.key_edit
-        )
+        self.key_edit.setPlaceholderText("enter, space, f5…")
+        form.addRow("Tecla", self.key_edit)
 
         # Combinação
 
         self.keys_edit = QLineEdit()
-
-        self.keys_edit.setPlaceholderText(
-            "ctrl+shift+esc"
-        )
-
-        form.addRow(
-            "Combinação:",
-            self.keys_edit
-        )
+        self.keys_edit.setPlaceholderText("ctrl+shift+esc")
+        form.addRow("Combinação", self.keys_edit)
 
         # Sequência
 
         self.sequence_edit = QLineEdit()
-
         self.sequence_edit.setPlaceholderText(
             "ctrl+c | delay:0.2 | ctrl+v"
         )
-
-        form.addRow(
-            "Sequência:",
-            self.sequence_edit
+        self.sequence_edit.setToolTip(
+            "Separe os passos com |. Use delay:segundos para pausas."
         )
+        form.addRow("Sequência", self.sequence_edit)
 
         # Botão
 
         self.button_combo = QComboBox()
+        self.button_combo.addItems(["left", "right", "middle"])
+        form.addRow("Botão", self.button_combo)
 
-        self.button_combo.addItems(
-            [
-                "left",
-                "right",
-                "middle"
-            ]
-        )
-
-        form.addRow(
-            "Botão:",
-            self.button_combo
-        )
-
-        # Duração
+        # Duração (usada apenas por 'hold')
 
         self.duration = QDoubleSpinBox()
-
-        self.duration.setRange(
-            0,
-            60
-        )
-
-        self.duration.setDecimals(
-            2
-        )
-
-        self.duration.setValue(
-            1
-        )
-
-        form.addRow(
-            "Duração:",
-            self.duration
-        )
-
-        # # X
-
-        # self.x_spin = QSpinBox()
-
-        # self.x_spin.setRange(
-        #     -10000,
-        #     10000
-        # )
-
-        # form.addRow(
-        #     "X:",
-        #     self.x_spin
-        # )
-
-        # # Y
-
-        # self.y_spin = QSpinBox()
-
-        # self.y_spin.setRange(
-        #     -10000,
-        #     10000
-        # )
-
-        # form.addRow(
-        #     "Y:",
-        #     self.y_spin
-        # )
+        self.duration.setRange(0, 60)
+        self.duration.setDecimals(2)
+        self.duration.setSuffix(" s")
+        self.duration.setValue(1)
+        form.addRow("Duração", self.duration)
 
         # Quantidade
 
         self.amount_spin = QSpinBox()
-
-        self.amount_spin.setRange(
-            -1000,
-            1000
+        self.amount_spin.setRange(-1000, 1000)
+        self.amount_spin.setValue(50)
+        self.amount_spin.setToolTip(
+            "Valores negativos rolam no sentido contrário."
         )
-
-        self.amount_spin.setValue(
-            50
-        )
-
-        form.addRow(
-            "N de Rolagem:",
-            self.amount_spin
-        )
+        form.addRow("Rolagem", self.amount_spin)
 
         # Especial
 
         self.special_combo = QComboBox()
+        self.special_combo.addItems(["screenshot"])
+        form.addRow("Especial", self.special_combo)
 
-        self.special_combo.addItems(
-            [
-                "screenshot"
-            ]
-        )
+        layout.addLayout(form)
 
-        form.addRow(
-            "Especial:",
-            self.special_combo
-        )
+        # Divisor
 
-        # Ativado
+        divider = QFrame()
+        divider.setFixedHeight(1)
+        divider.setObjectName("divider")
+        layout.addWidget(divider)
 
-        self.enabled = QCheckBox(
-            "Ativado"
-        )
+        # Ajustes gerais
 
-        self.enabled.setChecked(
-            True
-        )
-
-        form.addRow(
-            self.enabled
-        )
-
-        # Confiança
+        general = QFormLayout()
+        general.setHorizontalSpacing(14)
+        general.setVerticalSpacing(10)
+        general.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         self.min_confidence = QDoubleSpinBox()
-
-        self.min_confidence.setRange(
-            0,
-            1
+        self.min_confidence.setRange(0, 1)
+        self.min_confidence.setDecimals(2)
+        self.min_confidence.setSingleStep(0.05)
+        self.min_confidence.setValue(0.65)
+        self.min_confidence.setToolTip(
+            "Só executa a ação acima desta confiança."
         )
-
-        self.min_confidence.setDecimals(
-            2
-        )
-
-        self.min_confidence.setSingleStep(
-            0.05
-        )
-
-        self.min_confidence.setValue(
-            0.65
-        )
-
-        form.addRow(
-            "Confiança mínima:",
-            self.min_confidence
-        )
-
-        # Cooldown
+        general.addRow("Confiança mínima", self.min_confidence)
 
         self.cooldown = QDoubleSpinBox()
+        self.cooldown.setRange(0, 60)
+        self.cooldown.setDecimals(2)
+        self.cooldown.setSuffix(" s")
+        self.cooldown.setValue(0.5)
+        self.cooldown.setToolTip(
+            "Tempo de espera antes de repetir a ação."
+        )
+        general.addRow("Cooldown", self.cooldown)
 
-        self.cooldown.setRange(
-            0,
-            60
+        self.enabled = QCheckBox("Gesto ativado")
+        self.enabled.setChecked(True)
+        general.addRow(self.enabled)
+
+        layout.addLayout(general)
+
+        # Campos que podem ser mostrados/ocultados
+
+        self.field_widgets = {
+            "key": self.key_edit,
+            "keys": self.keys_edit,
+            "sequence": self.sequence_edit,
+            "button": self.button_combo,
+            "amount": self.amount_spin,
+            "special": self.special_combo,
+        }
+
+        return card
+
+    # =====================================================
+    # TEMA
+    # =====================================================
+
+    def apply_theme(self, theme, save=True):
+
+        self.theme = theme
+        self.setStyleSheet(build_style(theme))
+
+        if hasattr(self, "theme_button"):
+            self.theme_button.setText(
+                "Modo escuro" if theme == "light" else "Modo claro"
+            )
+
+        if save:
+            self.settings.setValue("theme", theme)
+
+    def toggle_theme(self):
+
+        self.apply_theme(
+            "dark" if self.theme == "light" else "light"
         )
 
-        self.cooldown.setDecimals(
-            2
+    # =====================================================
+    # CAMPOS CONTEXTUAIS
+    # =====================================================
+
+    def update_action_fields(self, *_):
+        """Mostra só os campos que a ação escolhida realmente usa."""
+
+        visible = self.ACTION_FIELDS.get(
+            self.action_combo.currentText(),
+            []
         )
 
-        self.cooldown.setValue(
-            0.5
-        )
+        for name, widget in self.field_widgets.items():
 
-        form.addRow(
-            "Cooldown:",
-            self.cooldown
-        )
+            show = name in visible
 
-        right.addWidget(
-            form_group
-        )
+            widget.setVisible(show)
 
-        # =================================================
-        # BOTÕES
-        # =================================================
+            label = self.form.labelForField(widget)
 
-        save_button = QPushButton(
-            "Salvar configuração"
-        )
+            if label:
+                label.setVisible(show)
 
-        save_button.clicked.connect(
-            self.save_gesture
-        )
+        # "Duração" só existe para 'hold', que não está na lista.
+        self.duration.setVisible(False)
 
-        right.addWidget(
-            save_button
-        )
+        label = self.form.labelForField(self.duration)
 
-        test_button = QPushButton(
-            "Testar ação"
-        )
+        if label:
+            label.setVisible(False)
 
-        test_button.clicked.connect(
-            self.test_action
-        )
+    # =====================================================
+    # STATUS
+    # =====================================================
 
-        right.addWidget(
-            test_button
-        )
+    def set_status(self, text, kind="info"):
 
-        # =================================================
-        # STATUS
-        # =================================================
+        self.status.setText(text)
+        self.status.setProperty("kind", kind)
 
-        self.status = QLabel(
-            "Pronto."
-        )
-
-        right.addWidget(
-            self.status
-        )
-
-        right.addStretch()
-
-        root.addLayout(
-            right,
-            1
-        )
-
-        self.refresh_list()
+        # Reaplica o estilo para refletir a nova propriedade
+        self.status.style().unpolish(self.status)
+        self.status.style().polish(self.status)
 
     # =====================================================
     # LISTA
@@ -534,50 +713,35 @@ class MainWindow(QMainWindow):
         if not item:
             return None
 
-        return item.data(
-            Qt.UserRole
-        )
+        return item.data(Qt.UserRole)
 
     def refresh_list(self):
 
         current = self.selected_id()
 
+        self.gesture_list.blockSignals(True)
         self.gesture_list.clear()
 
-        for gesture_id, gesture in (
-            self.config.all_gestures().items()
-        ):
+        for gesture_id, gesture in self.config.all_gestures().items():
 
-            item = QListWidgetItem(
-                gesture.get(
-                    "name",
-                    gesture_id
-                )
-            )
+            item = QListWidgetItem(gesture.get("name", gesture_id))
+            item.setData(Qt.UserRole, gesture_id)
 
-            item.setData(
-                Qt.UserRole,
-                gesture_id
-            )
-
-            self.gesture_list.addItem(
-                item
-            )
+            self.gesture_list.addItem(item)
 
             if gesture_id == current:
+                self.gesture_list.setCurrentItem(item)
 
-                self.gesture_list.setCurrentItem(
-                    item
-                )
+        self.gesture_list.blockSignals(False)
 
         if (
             self.gesture_list.count()
             and self.gesture_list.currentRow() < 0
         ):
+            self.gesture_list.setCurrentRow(0)
 
-            self.gesture_list.setCurrentRow(
-                0
-            )
+        else:
+            self.load_selected(self.gesture_list.currentItem())
 
     # =====================================================
     # NOVO GESTO
@@ -585,16 +749,19 @@ class MainWindow(QMainWindow):
 
     def new_gesture(self):
 
-        name, ok = QInputDialog.getText(
-            self,
-            "Novo gesto",
-            "Nome do gesto:"
-        )
+        dialog = QInputDialog(self)
+        dialog.setStyleSheet(build_style(self.theme))
+        dialog.setWindowTitle("Novo gesto")
+        dialog.setLabelText("Nome do gesto:")
+        dialog.setTextValue("")
+        dialog.setOkButtonText("Criar")
+        dialog.setCancelButtonText("Cancelar")
+        dialog.setMinimumWidth(380)
 
-        if not ok:
+        if dialog.exec() != QInputDialog.Accepted:
             return
 
-        name = name.strip()
+        name = dialog.textValue().strip()
 
         if not name:
             return
@@ -605,15 +772,10 @@ class MainWindow(QMainWindow):
             gesture_id,
             {
                 "name": name,
-
                 "samples": [],
-
                 "enabled": True,
-
                 "min_confidence": 0.65,
-
                 "cooldown": 0.5,
-
                 "action": {
                     "type": "key",
                     "key": "enter"
@@ -623,26 +785,17 @@ class MainWindow(QMainWindow):
 
         self.refresh_list()
 
-        for index in range(
-            self.gesture_list.count()
-        ):
+        for index in range(self.gesture_list.count()):
 
-            item = self.gesture_list.item(
-                index
-            )
+            item = self.gesture_list.item(index)
 
-            if item.data(
-                Qt.UserRole
-            ) == gesture_id:
-
-                self.gesture_list.setCurrentRow(
-                    index
-                )
-
+            if item.data(Qt.UserRole) == gesture_id:
+                self.gesture_list.setCurrentRow(index)
                 break
 
-        self.status.setText(
-            "Gesto criado. Mostre o gesto e capture algumas amostras."
+        self.set_status(
+            "Gesto criado. Mostre a mão à câmera e capture algumas amostras.",
+            "ok"
         )
 
     # =====================================================
@@ -656,15 +809,10 @@ class MainWindow(QMainWindow):
         if not gesture_id:
             return
 
-        self.config.remove(
-            gesture_id
-        )
-
+        self.config.remove(gesture_id)
         self.refresh_list()
 
-        self.status.setText(
-            "Gesto removido."
-        )
+        self.set_status("Gesto removido.", "warn")
 
     # =====================================================
     # CAPTURAR
@@ -694,93 +842,46 @@ class MainWindow(QMainWindow):
 
             return
 
-        gesture = self.config.get(
-            gesture_id
-        )
+        gesture = self.config.get(gesture_id)
 
-        gesture.setdefault(
-            "samples",
-            []
-        )
+        gesture.setdefault("samples", [])
+        gesture["samples"].append(self.current_sample)
 
-        gesture["samples"].append(
-            self.current_sample
-        )
+        self.config.set(gesture_id, gesture)
 
-        self.config.set(
-            gesture_id,
-            gesture
-        )
-
-        self.status.setText(
-            f"Amostras capturadas: "
-            f"{len(gesture['samples'])}"
+        self.set_status(
+            f"Amostras capturadas: {len(gesture['samples'])}",
+            "ok"
         )
 
     # =====================================================
     # CARREGAR
     # =====================================================
 
-    def load_selected(
-        self,
-        current,
-        previous=None
-    ):
+    def load_selected(self, current, previous=None):
 
         if not current:
             return
 
-        gesture_id = current.data(
-            Qt.UserRole
-        )
-
-        gesture = self.config.get(
-            gesture_id
-        )
+        gesture_id = current.data(Qt.UserRole)
+        gesture = self.config.get(gesture_id)
 
         if not gesture:
             return
 
-        self.name_edit.setText(
-            gesture.get(
-                "name",
-                ""
-            )
-        )
-
-        self.enabled.setChecked(
-            gesture.get(
-                "enabled",
-                True
-            )
-        )
+        self.name_edit.setText(gesture.get("name", ""))
+        self.enabled.setChecked(gesture.get("enabled", True))
 
         self.min_confidence.setValue(
-            float(
-                gesture.get(
-                    "min_confidence",
-                    0.65
-                )
-            )
+            float(gesture.get("min_confidence", 0.65))
         )
 
         self.cooldown.setValue(
-            float(
-                gesture.get(
-                    "cooldown",
-                    0.5
-                )
-            )
+            float(gesture.get("cooldown", 0.5))
         )
 
-        action = gesture.get(
-            "action",
-            {}
-        )
-
-        action_type = action.get(
-            "type"
-        )
+        action = gesture.get("action", {})
+        action_type = action.get("type")
 
         labels = {
             "key": "Tecla",
@@ -794,110 +895,48 @@ class MainWindow(QMainWindow):
         }
 
         if action_type in labels:
+            self.action_combo.setCurrentText(labels[action_type])
 
-            self.action_combo.setCurrentText(
-                labels[action_type]
-            )
+        self.key_edit.setText(action.get("key", ""))
 
-        self.key_edit.setText(
-            action.get(
-                "key",
-                ""
-            )
-        )
-
-        self.keys_edit.setText(
-            "+".join(
-                action.get(
-                    "keys",
-                    []
-                )
-            )
-        )
+        self.keys_edit.setText("+".join(action.get("keys", [])))
 
         self.sequence_edit.setText(
-            self.sequence_to_text(
-                action.get(
-                    "actions",
-                    []
-                )
-            )
+            self.sequence_to_text(action.get("actions", []))
         )
 
-        self.button_combo.setCurrentText(
-            action.get(
-                "button",
-                "left"
-            )
-        )
+        self.button_combo.setCurrentText(action.get("button", "left"))
 
-        self.duration.setValue(
-            float(
-                action.get(
-                    "duration",
-                    1
-                )
-            )
-        )
+        self.duration.setValue(float(action.get("duration", 1)))
 
-        self.amount_spin.setValue(
-            int(
-                action.get(
-                    "amount",
-                    5
-                )
-            )
-        )
+        self.amount_spin.setValue(int(action.get("amount", 5)))
 
         self.special_combo.setCurrentText(
-            action.get(
-                "command",
-                "screenshot"
-            )
+            action.get("command", "screenshot")
         )
+
+        self.update_action_fields()
 
     # =====================================================
     # SEQUÊNCIA → TEXTO
     # =====================================================
 
-    def sequence_to_text(
-        self,
-        actions
-    ):
+    def sequence_to_text(self, actions):
 
         parts = []
 
         for action in actions:
 
-            action_type = action.get(
-                "type"
-            )
+            action_type = action.get("type")
 
             if action_type == "delay":
-
-                parts.append(
-                    f"delay:{action.get('seconds', 0)}"
-                )
+                parts.append(f"delay:{action.get('seconds', 0)}")
 
             elif action_type == "key":
-
-                parts.append(
-                    action.get(
-                        "key",
-                        ""
-                    )
-                )
+                parts.append(action.get("key", ""))
 
             elif action_type == "hotkey":
-
-                parts.append(
-                    "+".join(
-                        action.get(
-                            "keys",
-                            []
-                        )
-                    )
-                )
+                parts.append("+".join(action.get("keys", [])))
 
         return " | ".join(parts)
 
@@ -909,67 +948,40 @@ class MainWindow(QMainWindow):
 
         label = self.action_combo.currentText()
 
-        # Tecla
-
         if label == "Tecla":
 
             return {
                 "type": "key",
-                "key": self.key_edit.text()
-                .strip()
-                .lower()
+                "key": self.key_edit.text().strip().lower()
             }
-
-        # Combinação
 
         if label == "Combinação":
 
             keys = [
                 key.strip().lower()
-                for key in self.keys_edit
-                .text()
-                .split("+")
+                for key in self.keys_edit.text().split("+")
                 if key.strip()
             ]
 
-            return {
-                "type": "hotkey",
-                "keys": keys
-            }
-
-        # Sequência
+            return {"type": "hotkey", "keys": keys}
 
         if label == "Sequência":
 
             actions = []
 
-            for part in (
-                self.sequence_edit
-                .text()
-                .split("|")
-            ):
+            for part in self.sequence_edit.text().split("|"):
 
                 part = part.strip()
 
                 if not part:
                     continue
 
-                if part.startswith(
-                    "delay:"
-                ):
+                if part.startswith("delay:"):
 
-                    seconds = float(
-                        part.split(
-                            ":",
-                            1
-                        )[1]
-                    )
+                    seconds = float(part.split(":", 1)[1])
 
                     actions.append(
-                        {
-                            "type": "delay",
-                            "seconds": seconds
-                        }
+                        {"type": "delay", "seconds": seconds}
                     )
 
                 else:
@@ -981,29 +993,16 @@ class MainWindow(QMainWindow):
                     ]
 
                     if len(keys) == 1:
-
                         actions.append(
-                            {
-                                "type": "key",
-                                "key": keys[0]
-                            }
+                            {"type": "key", "key": keys[0]}
                         )
 
                     else:
-
                         actions.append(
-                            {
-                                "type": "hotkey",
-                                "keys": keys
-                            }
+                            {"type": "hotkey", "keys": keys}
                         )
 
-            return {
-                "type": "sequence",
-                "actions": actions
-            }
-
-        # Clique
+            return {"type": "sequence", "actions": actions}
 
         if label == "Clique":
 
@@ -1012,8 +1011,6 @@ class MainWindow(QMainWindow):
                 "button": self.button_combo.currentText()
             }
 
-        # Duplo clique
-
         if label == "Duplo clique":
 
             return {
@@ -1021,80 +1018,36 @@ class MainWindow(QMainWindow):
                 "button": self.button_combo.currentText()
             }
 
-        # Hold
-
         if label == "Pressionar e segurar":
 
             return {
                 "type": "hold",
-                "key": self.key_edit.text()
-                .strip()
-                .lower(),
-
+                "key": self.key_edit.text().strip().lower(),
                 "duration": self.duration.value()
             }
-
-        # Mouse relativo
-
-        # if label == "Mover mouse":
-
-        #     return {
-        #         "type": "move_relative",
-
-        #         "x": self.x_spin.value(),
-
-        #         "y": self.y_spin.value(),
-
-        #         "duration": self.duration.value()
-        #     }
-
-        # # Mouse absoluto
-
-        # if label == "Mover mouse para posição":
-
-        #     return {
-        #         "type": "move_absolute",
-
-        #         "x": self.x_spin.value(),
-
-        #         "y": self.y_spin.val/ue(),
-
-        #         "duration": self.duration.value()
-        #     }
-
-        # Scroll
 
         if label == "Rolagem":
 
             return {
                 "type": "scroll",
-
                 "amount": self.amount_spin.value()
             }
-
-        # Scroll horizontal
 
         if label == "Rolagem horizontal":
 
             return {
                 "type": "hscroll",
-
                 "amount": self.amount_spin.value()
             }
-
-        # Especial
 
         if label == "Comando especial":
 
             return {
                 "type": "special",
-
                 "command": self.special_combo.currentText()
             }
 
-        raise ValueError(
-            "Ação inválida."
-        )
+        raise ValueError("Ação inválida.")
 
     # =====================================================
     # SALVAR
@@ -1114,41 +1067,27 @@ class MainWindow(QMainWindow):
 
             return
 
-        gesture = self.config.get(
-            gesture_id
-        )
+        try:
+            action = self.build_action()
 
-        gesture["name"] = (
-            self.name_edit.text().strip()
-            or gesture_id
-        )
+        except Exception as exc:
 
-        gesture["enabled"] = (
-            self.enabled.isChecked()
-        )
+            QMessageBox.critical(self, "Erro", str(exc))
+            return
 
-        gesture["min_confidence"] = (
-            self.min_confidence.value()
-        )
+        gesture = self.config.get(gesture_id)
 
-        gesture["cooldown"] = (
-            self.cooldown.value()
-        )
+        gesture["name"] = self.name_edit.text().strip() or gesture_id
+        gesture["enabled"] = self.enabled.isChecked()
+        gesture["min_confidence"] = self.min_confidence.value()
+        gesture["cooldown"] = self.cooldown.value()
+        gesture["action"] = action
 
-        gesture["action"] = (
-            self.build_action()
-        )
-
-        self.config.set(
-            gesture_id,
-            gesture
-        )
+        self.config.set(gesture_id, gesture)
 
         self.refresh_list()
 
-        self.status.setText(
-            "Configuração salva."
-        )
+        self.set_status("Configuração salva.", "ok")
 
     # =====================================================
     # TESTAR
@@ -1158,23 +1097,13 @@ class MainWindow(QMainWindow):
 
         try:
 
-            action = self.build_action()
+            self.executor.execute(self.build_action())
 
-            self.executor.execute(
-                action
-            )
-
-            self.status.setText(
-                "Ação executada."
-            )
+            self.set_status("Ação executada.", "ok")
 
         except Exception as exc:
 
-            QMessageBox.critical(
-                self,
-                "Erro",
-                str(exc)
-            )
+            QMessageBox.critical(self, "Erro", str(exc))
 
     # =====================================================
     # FRAME
@@ -1187,81 +1116,47 @@ class MainWindow(QMainWindow):
         if not ok:
             return
 
-        gesture_id, confidence, sample = (
-            self.recognizer.recognize(
-                frame,
-                self.config.all_gestures()
-            )
+        gesture_id, confidence, sample = self.recognizer.recognize(
+            frame,
+            self.config.all_gestures()
         )
 
         self.current_sample = sample
 
         if gesture_id:
 
-            gesture = self.config.get(
-                gesture_id
-            )
+            gesture = self.config.get(gesture_id)
+            name = gesture.get("name", gesture_id)
 
-            name = gesture.get(
-                "name",
-                gesture_id
-            )
-
-            self.detected.setText(
-                f"Gesto: {name}"
-            )
-
-            self.confidence.setText(
-                f"Confiança: {confidence:.0%}"
-            )
+            self.detected.setText(name)
+            self.confidence.setText(f"{confidence:.0%}")
+            self.confidence_bar.setValue(int(confidence * 100))
 
             try:
 
-                executed = (
-                    self.controller.process(
-                        gesture_id,
-                        confidence
-                    )
+                executed = self.controller.process(
+                    gesture_id,
+                    confidence
                 )
 
                 if executed:
-
-                    self.status.setText(
-                        f"Executado: {name}"
-                    )
+                    self.set_status(f"Executado: {name}", "ok")
 
             except Exception as exc:
 
-                self.status.setText(
-                    f"Erro: {exc}"
-                )
+                self.set_status(f"Erro: {exc}", "error")
 
         else:
 
-            self.detected.setText(
-                "Gesto: —"
-            )
+            self.detected.setText("—")
+            self.confidence.setText("—")
+            self.confidence_bar.setValue(0)
 
-            self.detected.setToolTip(
-                "Identificação do gesto realizado"
-            )
+        # Mostrar câmera
 
-            self.confidence.setText(
-                "Confiança: —"
-            )
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        # =================================================
-        # MOSTRAR CÂMERA
-        # =================================================
-
-        rgb = cv2.cvtColor(
-            frame,
-            cv2.COLOR_BGR2RGB
-        )
-
-        height, width, channels = (
-            rgb.shape
-        )
+        height, width, channels = rgb.shape
 
         image = QImage(
             rgb.data,
@@ -1271,9 +1166,7 @@ class MainWindow(QMainWindow):
             QImage.Format_RGB888
         )
 
-        pixmap = QPixmap.fromImage(
-            image
-        )
+        pixmap = QPixmap.fromImage(image)
 
         self.video.setPixmap(
             pixmap.scaled(
@@ -1290,9 +1183,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
 
         self.timer.stop()
-
         self.camera.release()
-
         self.recognizer.close()
 
         event.accept()

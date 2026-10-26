@@ -26,8 +26,6 @@ class ActionExecutor:
                         pyautogui.press("space")
                     else:
                         pyautogui.press(char)
-
-                    time.sleep(0.01)
             else:
                 pyautogui.press(key)
 
