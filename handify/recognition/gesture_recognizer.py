@@ -13,14 +13,6 @@ MODEL_URL = (
 
 
 class GestureRecognizer:
-    """
-    Reconhecimento de gestos personalizados.
-
-    O sistema não possui uma lista fixa de gestos.
-
-    Cada gesto cadastrado possui uma ou mais amostras dos
-    21 landmarks da mão.
-    """
 
     def __init__(self, model_path=None):
 
@@ -71,10 +63,6 @@ class GestureRecognizer:
             )
         )
 
-    # ---------------------------------------------------------
-    # LANDMARKS
-    # ---------------------------------------------------------
-
     @staticmethod
     def normalize_landmarks(hand_landmarks):
         """
@@ -114,10 +102,6 @@ class GestureRecognizer:
 
         return points.flatten().tolist()
 
-    # ---------------------------------------------------------
-    # EXTRAÇÃO
-    # ---------------------------------------------------------
-
     def extract(self, frame):
         """
         Retorna os landmarks normalizados da mão.
@@ -145,10 +129,6 @@ class GestureRecognizer:
             result.hand_landmarks[0]
         )
 
-    # ---------------------------------------------------------
-    # DISTÂNCIA
-    # ---------------------------------------------------------
-
     @staticmethod
     def distance(sample_a, sample_b):
         a = np.asarray(
@@ -165,10 +145,6 @@ class GestureRecognizer:
             np.linalg.norm(a - b)
             / np.sqrt(len(a))
         )
-
-    # ---------------------------------------------------------
-    # RECONHECIMENTO
-    # ---------------------------------------------------------
 
     def recognize(
         self,

@@ -1,4 +1,5 @@
 {
+<<<<<<< Updated upstream
     "gestures": {
         "b276d1a8b17e4e14af6331f672000935": {
             "name": "Luladroid",
@@ -663,4 +664,7 @@
             }
         }
     }
+=======
+    "gestures": {}
+>>>>>>> Stashed changes
 }

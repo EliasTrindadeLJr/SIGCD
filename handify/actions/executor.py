@@ -54,12 +54,13 @@ class ActionExecutor:
 
         elif action_type == "click":
 
+            print("ANTES:", pyautogui.position())
+
             pyautogui.click(
-                button=action.get(
-                    "button",
-                    "left"
-                )
+                button=action.get("button", "left")
             )
+
+            print("DEPOIS:", pyautogui.position())
 
         elif action_type == "double_click":
 

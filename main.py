@@ -1,7 +1,5 @@
 import sys
-
 from PySide6.QtWidgets import QApplication
-
 from handify.ui.main_window import MainWindow
 
 
