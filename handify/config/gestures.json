@@ -1,7 +1,7 @@
 {
     "gestures": {
         "ebd9744ad971483ca28e1b69ba89937b": {
-            "name": "l",
+            "name": "Teste 1",
             "samples": [
                 [
                     0.0,
@@ -590,7 +590,7 @@
                 ]
             ],
             "enabled": true,
-            "min_confidence": 0.65,
+            "min_confidence": 0.5,
             "cooldown": 0.5,
             "action": {
                 "type": "hotkey",
@@ -601,7 +601,7 @@
             }
         },
         "8737cc03b64e417d8a9967635b6a0e53": {
-            "name": "Teste",
+            "name": "Teste 2",
             "samples": [
                 [
                     0.0,
@@ -1128,12 +1128,12 @@
             "min_confidence": 0.65,
             "cooldown": 0.5,
             "action": {
-                "type": "key",
-                "key": "enter"
+                "type": "sequence",
+                "actions": []
             }
         },
         "bf5be42f63e84fb4869157667b7c5950": {
-            "name": "Teste",
+            "name": "Teste 3",
             "samples": [
                 [
                     0.0,

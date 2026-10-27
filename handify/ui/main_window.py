@@ -1424,5 +1424,4 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         self.camera.release()
         self.recognizer.close()
-
         event.accept()
