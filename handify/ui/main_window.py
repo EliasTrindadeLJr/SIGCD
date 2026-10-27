@@ -1,9 +1,11 @@
 import uuid
+import tempfile
+from pathlib import Path
 
 import cv2
 
-from PySide6.QtCore import QTimer, Qt, QSettings
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QTimer, Qt, QSettings, QPoint, QPointF
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -11,8 +13,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QListWidget,
-    QListWidgetItem,
     QLineEdit,
     QComboBox,
     QDoubleSpinBox,
@@ -126,6 +126,54 @@ QComboBox QAbstractItemView {
     border: 1px solid @inputborder;
     selection-background-color: @selected;
     outline: none;
+}
+
+QSpinBox, QDoubleSpinBox {
+    padding-right: 30px;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 26px;
+    margin: 1px 1px 0 0;
+    border: none;
+    border-left: 1px solid @inputborder;
+    border-top-right-radius: 7px;
+    background: transparent;
+}
+
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 26px;
+    margin: 0 1px 1px 0;
+    border: none;
+    border-left: 1px solid @inputborder;
+    border-bottom-right-radius: 7px;
+    background: transparent;
+}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: @surface;
+}
+
+QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
+QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {
+    background: @btnpressed;
+}
+
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url(@uparrow);
+    width: 12px;
+    height: 12px;
+}
+
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url(@downarrow);
+    width: 12px;
+    height: 12px;
 }
 
 QPushButton {
@@ -255,10 +303,66 @@ PALETTES = {
 }
 
 
+# =========================================================
+# ÍCONES DAS SETAS DOS SPINBOXES
+# =========================================================
+
+_ARROW_CACHE = {}
+
+
+def make_arrow_icons(theme, color):
+    """Gera (uma vez por tema) os PNGs das setas e devolve os caminhos."""
+
+    if theme in _ARROW_CACHE:
+        return _ARROW_CACHE[theme]
+
+    folder = Path(tempfile.gettempdir()) / "handify_icons"
+    folder.mkdir(exist_ok=True)
+
+    paths = {}
+
+    for name in ("up", "down"):
+
+        pixmap = QPixmap(24, 24)
+        pixmap.fill(Qt.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        pen = QPen(QColor(color))
+        pen.setWidthF(2.4)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+
+        c = pixmap.rect().center()
+
+        if name == "up":
+            points = [c + QPoint(-6, 3), c + QPoint(0, -3), c + QPoint(6, 3)]
+        else:
+            points = [c + QPoint(-6, -3), c + QPoint(0, 3), c + QPoint(6, -3)]
+
+        painter.drawPolyline(points)
+        painter.end()
+
+        path = folder / f"{theme}_{name}.png"
+        pixmap.save(str(path), "PNG")
+
+        paths[name] = path.as_posix()
+
+    _ARROW_CACHE[theme] = paths
+    return paths
+
+
 def build_style(theme):
     """Gera a folha de estilo (QSS) para o tema 'light' ou 'dark'."""
 
-    palette = PALETTES.get(theme, PALETTES["light"])
+    palette = dict(PALETTES.get(theme, PALETTES["light"]))
+
+    arrows = make_arrow_icons(theme, palette["muted"])
+    palette["uparrow"] = arrows["up"]
+    palette["downarrow"] = arrows["down"]
+
     style = STYLE_TEMPLATE
 
     # Nomes maiores primeiro (@selectedtext antes de @selected, etc.)
@@ -266,7 +370,6 @@ def build_style(theme):
         style = style.replace("@" + key, palette[key])
 
     return style
-
 
 
 def make_card(title=None, subtitle=None):
@@ -291,6 +394,128 @@ def make_card(title=None, subtitle=None):
         layout.addWidget(hint)
 
     return frame, layout
+
+
+# =========================================================
+# PRÉ-VISUALIZAÇÃO DA MÃO
+# =========================================================
+
+HAND_CONNECTIONS = [
+    (0, 1), (1, 2), (2, 3), (3, 4),
+    (0, 5), (5, 6), (6, 7), (7, 8),
+    (5, 9), (9, 10), (10, 11), (11, 12),
+    (9, 13), (13, 14), (14, 15), (15, 16),
+    (13, 17), (17, 18), (18, 19), (19, 20),
+    (0, 17),
+]
+
+
+def sample_to_points(sample):
+    """Converte uma amostra em 21 pares (x, y). Devolve [] se não reconhecer."""
+
+    if sample is None:
+        return []
+
+    try:
+        sample = list(sample)
+
+        if not sample:
+            return []
+
+        if isinstance(sample[0], (list, tuple)):
+            points = [(float(p[0]), float(p[1])) for p in sample]
+
+        else:
+            flat = [float(v) for v in sample]
+
+            if len(flat) == 63:
+                stride = 3
+            elif len(flat) == 42:
+                stride = 2
+            else:
+                return []
+
+            points = [
+                (flat[i], flat[i + 1])
+                for i in range(0, len(flat), stride)
+            ]
+
+    except (TypeError, ValueError, IndexError):
+        return []
+
+    return points if len(points) == 21 else []
+
+
+class HandPreview(QWidget):
+    """Desenha o esqueleto da mão a partir de uma amostra."""
+
+    def __init__(self, parent=None):
+
+        super().__init__(parent)
+
+        self.points = []
+        self.line_color = QColor("#8B93AA")
+        self.dot_color = QColor("#6F7DFF")
+
+        self.setMinimumSize(160, 160)
+
+    def set_colors(self, line, dot):
+
+        self.line_color = QColor(line)
+        self.dot_color = QColor(dot)
+        self.update()
+
+    def set_sample(self, sample):
+
+        self.points = sample_to_points(sample)
+        self.update()
+
+    def paintEvent(self, event):
+
+        if not self.points:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        xs = [p[0] for p in self.points]
+        ys = [p[1] for p in self.points]
+
+        min_x, min_y = min(xs), min(ys)
+
+        span_x = (max(xs) - min_x) or 1.0
+        span_y = (max(ys) - min_y) or 1.0
+
+        margin = 14
+        size = min(self.width(), self.height()) - 2 * margin
+        scale = size / max(span_x, span_y)
+
+        offset_x = (self.width() - span_x * scale) / 2
+        offset_y = (self.height() - span_y * scale) / 2
+
+        mapped = [
+            QPointF(
+                offset_x + (x - min_x) * scale,
+                offset_y + (y - min_y) * scale,
+            )
+            for x, y in self.points
+        ]
+
+        pen = QPen(self.line_color)
+        pen.setWidthF(2.2)
+        pen.setCapStyle(Qt.RoundCap)
+        painter.setPen(pen)
+
+        for a, b in HAND_CONNECTIONS:
+            painter.drawLine(mapped[a], mapped[b])
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(self.dot_color)
+
+        for point in mapped:
+            painter.drawEllipse(point, 3.5, 3.5)
+
+        painter.end()
 
 
 class MainWindow(QMainWindow):
@@ -380,15 +605,16 @@ class MainWindow(QMainWindow):
         caption = QLabel("Gesto detectado")
         caption.setObjectName("muted")
 
-        self.detected = QLabel("—")
+        self.detected = QLabel("")
         self.detected.setObjectName("gestureName")
+        self.detected.setMinimumHeight(32)
         self.detected.setToolTip("Identificação do gesto realizado")
 
         top = QHBoxLayout()
         top.addWidget(caption)
         top.addStretch()
 
-        self.confidence = QLabel("—")
+        self.confidence = QLabel("")
         self.confidence.setObjectName("muted")
         top.addWidget(self.confidence)
 
@@ -474,12 +700,23 @@ class MainWindow(QMainWindow):
 
         card, layout = make_card("Gestos cadastrados")
 
-        self.gesture_list = QListWidget()
-        self.gesture_list.setMinimumHeight(140)
-        self.gesture_list.setMaximumHeight(200)
-        self.gesture_list.currentItemChanged.connect(self.load_selected)
+        self.gesture_combo = QComboBox()
+        self.gesture_combo.setCursor(Qt.PointingHandCursor)
+        self.gesture_combo.setToolTip("Selecione um gesto cadastrado")
+        self.gesture_combo.currentIndexChanged.connect(
+            self.on_gesture_changed
+        )
 
-        layout.addWidget(self.gesture_list)
+        layout.addWidget(self.gesture_combo)
+
+        # Pré-visualização da amostra salva
+
+        preview_caption = QLabel("Amostra mais recente")
+        preview_caption.setObjectName("muted")
+        layout.addWidget(preview_caption)
+
+        self.preview = HandPreview()
+        layout.addWidget(self.preview)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(10)
@@ -596,11 +833,11 @@ class MainWindow(QMainWindow):
         general.setVerticalSpacing(10)
         general.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
-        self.min_confidence = QDoubleSpinBox()
-        self.min_confidence.setRange(0, 1)
-        self.min_confidence.setDecimals(2)
-        self.min_confidence.setSingleStep(0.05)
-        self.min_confidence.setValue(0.65)
+        self.min_confidence = QSpinBox()
+        self.min_confidence.setRange(0, 100)
+        self.min_confidence.setSingleStep(5)
+        self.min_confidence.setSuffix(" %")
+        self.min_confidence.setValue(65)
         self.min_confidence.setToolTip(
             "Só executa a ação acima desta confiança."
         )
@@ -648,6 +885,10 @@ class MainWindow(QMainWindow):
             self.theme_button.setText(
                 "Modo escuro" if theme == "light" else "Modo claro"
             )
+
+        if hasattr(self, "preview"):
+            palette = PALETTES.get(theme, PALETTES["light"])
+            self.preview.set_colors(palette["muted"], palette["accent"])
 
         if save:
             self.settings.setValue("theme", theme)
@@ -708,40 +949,36 @@ class MainWindow(QMainWindow):
 
     def selected_id(self):
 
-        item = self.gesture_list.currentItem()
-
-        if not item:
-            return None
-
-        return item.data(Qt.UserRole)
+        # None quando o dropdown está vazio
+        return self.gesture_combo.currentData()
 
     def refresh_list(self):
 
         current = self.selected_id()
 
-        self.gesture_list.blockSignals(True)
-        self.gesture_list.clear()
+        self.gesture_combo.blockSignals(True)
+        self.gesture_combo.clear()
 
         for gesture_id, gesture in self.config.all_gestures().items():
 
-            item = QListWidgetItem(gesture.get("name", gesture_id))
-            item.setData(Qt.UserRole, gesture_id)
+            self.gesture_combo.addItem(
+                gesture.get("name") or gesture_id,
+                gesture_id
+            )
 
-            self.gesture_list.addItem(item)
+        index = self.gesture_combo.findData(current) if current else -1
 
-            if gesture_id == current:
-                self.gesture_list.setCurrentItem(item)
+        if index < 0 and self.gesture_combo.count():
+            index = 0
 
-        self.gesture_list.blockSignals(False)
+        self.gesture_combo.setCurrentIndex(index)
+        self.gesture_combo.blockSignals(False)
 
-        if (
-            self.gesture_list.count()
-            and self.gesture_list.currentRow() < 0
-        ):
-            self.gesture_list.setCurrentRow(0)
+        self.load_gesture(self.selected_id())
 
-        else:
-            self.load_selected(self.gesture_list.currentItem())
+    def on_gesture_changed(self, index):
+
+        self.load_gesture(self.gesture_combo.itemData(index))
 
     # =====================================================
     # NOVO GESTO
@@ -785,13 +1022,9 @@ class MainWindow(QMainWindow):
 
         self.refresh_list()
 
-        for index in range(self.gesture_list.count()):
-
-            item = self.gesture_list.item(index)
-
-            if item.data(Qt.UserRole) == gesture_id:
-                self.gesture_list.setCurrentRow(index)
-                break
+        self.gesture_combo.setCurrentIndex(
+            self.gesture_combo.findData(gesture_id)
+        )
 
         self.set_status(
             "Gesto criado. Mostre a mão à câmera e capture algumas amostras.",
@@ -849,6 +1082,8 @@ class MainWindow(QMainWindow):
 
         self.config.set(gesture_id, gesture)
 
+        self.preview.set_sample(self.current_sample)
+
         self.set_status(
             f"Amostras capturadas: {len(gesture['samples'])}",
             "ok"
@@ -858,22 +1093,23 @@ class MainWindow(QMainWindow):
     # CARREGAR
     # =====================================================
 
-    def load_selected(self, current, previous=None):
+    def load_gesture(self, gesture_id):
 
-        if not current:
+        if not gesture_id:
+            self.preview.set_sample(None)
             return
 
-        gesture_id = current.data(Qt.UserRole)
         gesture = self.config.get(gesture_id)
 
         if not gesture:
+            self.preview.set_sample(None)
             return
 
         self.name_edit.setText(gesture.get("name", ""))
         self.enabled.setChecked(gesture.get("enabled", True))
 
         self.min_confidence.setValue(
-            float(gesture.get("min_confidence", 0.65))
+            round(float(gesture.get("min_confidence", 0.65)) * 100)
         )
 
         self.cooldown.setValue(
@@ -914,6 +1150,9 @@ class MainWindow(QMainWindow):
         self.special_combo.setCurrentText(
             action.get("command", "screenshot")
         )
+
+        samples = gesture.get("samples", [])
+        self.preview.set_sample(samples[-1] if samples else None)
 
         self.update_action_fields()
 
@@ -1079,7 +1318,7 @@ class MainWindow(QMainWindow):
 
         gesture["name"] = self.name_edit.text().strip() or gesture_id
         gesture["enabled"] = self.enabled.isChecked()
-        gesture["min_confidence"] = self.min_confidence.value()
+        gesture["min_confidence"] = self.min_confidence.value() / 100
         gesture["cooldown"] = self.cooldown.value()
         gesture["action"] = action
 
@@ -1126,7 +1365,7 @@ class MainWindow(QMainWindow):
         if gesture_id:
 
             gesture = self.config.get(gesture_id)
-            name = gesture.get("name", gesture_id)
+            name = (gesture.get("name") or "").strip() or "Gesto sem nome"
 
             self.detected.setText(name)
             self.confidence.setText(f"{confidence:.0%}")
@@ -1148,8 +1387,8 @@ class MainWindow(QMainWindow):
 
         else:
 
-            self.detected.setText("—")
-            self.confidence.setText("—")
+            self.detected.setText("")
+            self.confidence.setText("")
             self.confidence_bar.setValue(0)
 
         # Mostrar câmera
