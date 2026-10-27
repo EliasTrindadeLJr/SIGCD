@@ -1,3 +1,4 @@
+import sys
 import json
 from pathlib import Path
 
@@ -5,7 +6,12 @@ from pathlib import Path
 class ConfigManager:
     def __init__(self, path=None):
         if path is None:
-            path = Path(__file__).with_name("gestures.json")
+            if getattr(sys, "frozen", False):
+                base_dir = Path(sys.executable).parent
+            else:
+                base_dir = Path(__file__).resolve().parents[2]
+
+            path = base_dir / "handify" / "config" / "gestures.json"
 
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
