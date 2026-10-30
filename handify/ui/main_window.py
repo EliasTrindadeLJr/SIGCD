@@ -450,7 +450,7 @@ class HandPreview(QWidget):
     """Desenha o esqueleto da mão a partir de uma amostra."""
 
     def __init__(self, parent=None):
-
+        
         super().__init__(parent)
 
         self.points = []
@@ -555,6 +555,21 @@ class MainWindow(QMainWindow):
             self.camera = cv2.VideoCapture(0)
 
         self.current_sample = None
+        self.capture_gesture_id = None
+        self.capture_samples = []
+        self.capture_countdown = 5
+        self.capture_target = 10
+        self.is_capturing = False
+
+        # Timer da contagem regressiva
+        self.countdown_timer = QTimer(self)
+        self.countdown_timer.setInterval(1000)
+        self.countdown_timer.timeout.connect(self.update_countdown)
+
+        # Timer de coleta das amostras
+        self.sample_timer = QTimer(self)
+        self.sample_timer.setInterval(150)
+        self.sample_timer.timeout.connect(self.collect_sample)
 
         self.build_ui()
 
@@ -636,6 +651,13 @@ class MainWindow(QMainWindow):
         self.capture_button.clicked.connect(self.capture_gesture)
 
         left.addWidget(self.capture_button)
+
+        self.capture_progress = QLabel("")
+        self.capture_progress.setObjectName("muted")
+        self.capture_progress.setAlignment(Qt.AlignCenter)
+        self.capture_progress.hide()
+
+        left.addWidget(self.capture_progress)
 
         return left
 
@@ -1056,39 +1078,148 @@ class MainWindow(QMainWindow):
         gesture_id = self.selected_id()
 
         if not gesture_id:
-
             QMessageBox.warning(
                 self,
                 "Nenhum gesto",
                 "Crie ou selecione um gesto primeiro."
             )
-
             return
 
-        if self.current_sample is None:
+        if self.is_capturing:
+            return
 
-            QMessageBox.warning(
-                self,
-                "Nenhuma mão",
-                "Mostre a mão para a câmera."
+        self.capture_gesture_id = gesture_id
+        self.capture_samples = []
+        self.capture_countdown = 5
+        self.is_capturing = True
+
+        self.capture_button.setEnabled(False)
+        self.capture_progress.show()
+
+        self.capture_progress.setText(
+            "Prepare-se... 5"
+        )
+
+        self.set_status(
+            "Captura iniciando em 5 segundos...",
+            "warn"
+        )
+
+        self.countdown_timer.start()
+
+    def update_countdown(self):
+
+        self.capture_countdown -= 1
+
+        if self.capture_countdown > 0:
+
+            self.capture_progress.setText(
+                f"Prepare-se... {self.capture_countdown}"
             )
 
             return
 
-        gesture = self.config.get(gesture_id)
+        self.countdown_timer.stop()
 
-        gesture.setdefault("samples", [])
-        gesture["samples"].append(self.current_sample)
-
-        self.config.set(gesture_id, gesture)
-
-        self.preview.set_sample(self.current_sample)
+        self.capture_progress.setText(
+            f"Capturando amostras: 0/{self.capture_target}"
+        )
 
         self.set_status(
-            f"Amostras capturadas: {len(gesture['samples'])}",
+            "Capturando amostras do gesto...",
+            "warn"
+        )
+
+        self.sample_timer.start()
+
+    def collect_sample(self):
+
+        if self.current_sample is None:
+            return
+
+        # Verifica se a amostra contém os 21 pontos da mão
+        if not sample_to_points(self.current_sample):
+            return
+
+        # Guarda uma cópia independente da amostra
+        sample = [
+            list(point) if isinstance(point, (list, tuple)) else point
+            for point in self.current_sample
+        ]
+
+        self.capture_samples.append(sample)
+
+        count = len(self.capture_samples)
+
+        self.capture_progress.setText(
+            f"Capturando amostras: {count}/{self.capture_target}"
+        )
+
+        self.set_status(
+            f"Coletando amostras: {count}/{self.capture_target}",
+            "warn"
+        )
+
+        if count >= self.capture_target:
+            self.finish_capture()
+
+    def finish_capture(self):
+
+        self.sample_timer.stop()
+        self.countdown_timer.stop()
+
+        gesture_id = self.capture_gesture_id
+
+        gesture = self.config.get(gesture_id)
+
+        if not gesture:
+            self.cancel_capture()
+            return
+
+        gesture.setdefault("samples", [])
+
+        # Adiciona as 10 novas amostras
+        gesture["samples"].extend(self.capture_samples)
+
+        # Persiste no JSON
+        self.config.set(gesture_id, gesture)
+
+        # Atualiza a pré-visualização
+        self.preview.set_sample(self.capture_samples[-1])
+
+        total = len(gesture["samples"])
+
+        self.capture_progress.setText(
+            f"Captura concluída: {self.capture_target}/{self.capture_target}"
+        )
+
+        self.set_status(
+            f"10 amostras salvas! Total do gesto: {total}.",
             "ok"
         )
 
+        self.capture_button.setEnabled(True)
+
+        self.capture_gesture_id = None
+        self.capture_samples = []
+        self.is_capturing = False
+
+    def cancel_capture(self):
+
+        self.countdown_timer.stop()
+        self.sample_timer.stop()
+
+        self.capture_button.setEnabled(True)
+        self.capture_progress.hide()
+
+        self.capture_gesture_id = None
+        self.capture_samples = []
+        self.is_capturing = False
+
+        self.set_status(
+            "Captura cancelada.",
+            "error"
+        )
     # =====================================================
     # CARREGAR
     # =====================================================
@@ -1362,7 +1493,7 @@ class MainWindow(QMainWindow):
 
         self.current_sample = sample
 
-        if gesture_id:
+        if gesture_id and not self.is_capturing:
 
             gesture = self.config.get(gesture_id)
             name = (gesture.get("name") or "").strip() or "Gesto sem nome"
